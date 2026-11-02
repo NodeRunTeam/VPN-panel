@@ -110,9 +110,9 @@ object LinkBuilder {
             sni = t?.optString("serverName").orEmpty()
             fp = t?.optJSONObject("settings")?.optString("fingerprint").orEmpty()
             alpn = t?.optJSONArray("alpn")?.let { a -> (0 until a.length()).joinToString(",") { a.optString(it) } }.orEmpty()
-            if (sni.isNotBlank()) p["sni"] = sni
             if (fp.isNotBlank()) p["fp"] = fp
             if (alpn.isNotBlank()) p["alpn"] = alpn
+            if (sni.isNotBlank()) p["sni"] = sni
         } else if (security == "reality") {
             val r = st.optJSONObject("realitySettings")
             val rs = r?.optJSONObject("settings")
@@ -122,9 +122,9 @@ object LinkBuilder {
             val sid = r?.optJSONArray("shortIds")?.optString(0).orEmpty()
             val spx = rs?.optString("spiderX").orEmpty()
             val pqv = rs?.optString("mldsa65Verify").orEmpty()
-            if (sni.isNotBlank()) p["sni"] = sni
-            if (fp.isNotBlank()) p["fp"] = fp
             if (pbk.isNotBlank()) p["pbk"] = pbk
+            if (fp.isNotBlank()) p["fp"] = fp
+            if (sni.isNotBlank()) p["sni"] = sni
             if (sid.isNotBlank()) p["sid"] = sid
             if (spx.isNotBlank()) p["spx"] = spx
             if (pqv.isNotBlank()) p["pqv"] = pqv

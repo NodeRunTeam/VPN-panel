@@ -140,12 +140,27 @@ class XuiClient(private val cfg: ServerConfig) {
     /** Создать клиента. Поля подбираются по протоколу inbound'а. */
     suspend fun addClient(ib: Inbound, email: String, totalBytes: Long, expiryMs: Long) {
         val settingsObj = runCatching { JSONObject(JSONObject(ib.raw).optString("settings")) }.getOrDefault(JSONObject())
-        val first = settingsObj.optJSONArray("clients")?.optJSONObject(0)
         val c = JSONObject()
         when (ib.protocol) {
             "vless" -> {
                 c.put("id", UUID.randomUUID().toString())
-                c.put("flow", first?.optString("flow").orEmpty())
+                // flow: берём у любого существующего клиента, иначе для tcp+reality/tls ставим vision
+                var flow = ""
+                val existing = settingsObj.optJSONArray("clients")
+                if (existing != null) {
+                    for (i in 0 until existing.length()) {
+                        val f = existing.optJSONObject(i)?.optString("flow").orEmpty()
+                        if (f.isNotBlank()) { flow = f; break }
+                    }
+                }
+                if (flow.isBlank()) {
+                    val st = runCatching { JSONObject(JSONObject(ib.raw).optString("streamSettings")) }
+                        .getOrDefault(JSONObject())
+                    val net = st.optString("network").ifBlank { "tcp" }
+                    val sec = st.optString("security")
+                    if (net == "tcp" && (sec == "reality" || sec == "tls")) flow = "xtls-rprx-vision"
+                }
+                c.put("flow", flow)
             }
             "vmess" -> {
                 c.put("id", UUID.randomUUID().toString())
