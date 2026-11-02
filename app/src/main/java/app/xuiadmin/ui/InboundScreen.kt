@@ -16,9 +16,12 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -29,15 +32,21 @@ import app.xuiadmin.data.Inbound
 fun InboundScreen(
     ib: Inbound?,
     onlines: Set<String>,
+    panelUrl: String,
     onBack: () -> Unit,
     onToggleInbound: (Inbound, Boolean) -> Unit,
     onToggleClient: (Inbound, ClientInfo, Boolean) -> Unit,
     onResetClient: (Inbound, ClientInfo) -> Unit,
+    onDeleteClient: (Inbound, ClientInfo) -> Unit,
+    onAddClient: (Inbound, String, Double, Int) -> Unit,
 ) {
     if (ib == null) {
         LaunchedEffect(Unit) { onBack() }
         return
     }
+    var shareFor by remember { mutableStateOf<ClientInfo?>(null) }
+    var addOpen by remember { mutableStateOf(false) }
+
     val bars = WindowInsets.systemBars.asPaddingValues()
     LazyColumn(
         Modifier.fillMaxSize(),
@@ -72,7 +81,14 @@ fun InboundScreen(
         }
 
         item {
-            Text("Клиенты (${ib.clients.size})", color = GlassColors.Text, fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    "Клиенты (${ib.clients.size})",
+                    color = GlassColors.Text, fontSize = 20.sp, fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier.weight(1f),
+                )
+                GlassButton("+ Клиент", { addOpen = true }, tint = GlassColors.Green, small = true)
+            }
         }
 
         items(ib.clients, key = { it.key + it.email }) { c ->
@@ -80,17 +96,39 @@ fun InboundScreen(
                 c = c,
                 online = c.email in onlines,
                 onToggle = { onToggleClient(ib, c, it) },
+                onShare = { shareFor = c },
                 onReset = { onResetClient(ib, c) },
+                onDelete = { onDeleteClient(ib, c) },
             )
         }
+    }
+
+    if (addOpen) {
+        AddClientDialog(
+            onDismiss = { addOpen = false },
+            onCreate = { email, gb, days ->
+                onAddClient(ib, email, gb, days)
+                addOpen = false
+            },
+        )
+    }
+    shareFor?.let { c ->
+        ShareDialog(ib, c, panelUrl) { shareFor = null }
     }
 }
 
 @Composable
-private fun ClientCard(c: ClientInfo, online: Boolean, onToggle: (Boolean) -> Unit, onReset: () -> Unit) {
+private fun ClientCard(
+    c: ClientInfo,
+    online: Boolean,
+    onToggle: (Boolean) -> Unit,
+    onShare: () -> Unit,
+    onReset: () -> Unit,
+    onDelete: () -> Unit,
+) {
     GlassCard(Modifier.fillMaxWidth()) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            StatusDot(if (online) GlassColors.Green else Color.White.copy(alpha = 0.3f))
+            StatusDot(if (online) GlassColors.Green else LocalGlass.current.offDot)
             HSpace(10)
             Column(Modifier.weight(1f)) {
                 Text(
@@ -114,7 +152,11 @@ private fun ClientCard(c: ClientInfo, online: Boolean, onToggle: (Boolean) -> Un
         }
         VSpace(6)
         Text("До: ${formatExpiry(c.expiryTime)}", color = GlassColors.TextDim, fontSize = 13.sp)
-        VSpace(10)
-        GlassButton("Сбросить трафик", onReset, tint = GlassColors.Orange, small = true, modifier = Modifier.align(Alignment.End))
+        VSpace(12)
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            GlassButton("Ссылка", onShare, Modifier.weight(1f), small = true)
+            GlassButton("Сброс", onReset, Modifier.weight(1f), tint = GlassColors.Orange, small = true)
+            GlassButton("Удалить", onDelete, Modifier.weight(1f), tint = GlassColors.Red, small = true)
+        }
     }
 }

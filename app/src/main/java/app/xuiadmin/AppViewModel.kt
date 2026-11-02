@@ -6,6 +6,7 @@ import androidx.lifecycle.viewModelScope
 import app.xuiadmin.data.ClientInfo
 import app.xuiadmin.data.Inbound
 import app.xuiadmin.data.SecureStore
+import app.xuiadmin.data.UiPrefs
 import app.xuiadmin.data.ServerConfig
 import app.xuiadmin.data.ServerStatus
 import app.xuiadmin.data.XuiClient
@@ -20,6 +21,8 @@ import java.net.SocketTimeoutException
 import java.net.UnknownHostException
 import javax.net.ssl.SSLException
 
+enum class ThemeMode { System, Light, Dark }
+
 enum class Screen { Login, Dashboard, Inbound }
 
 data class UiState(
@@ -32,15 +35,26 @@ data class UiState(
     val onlines: Set<String> = emptySet(),
     val selectedInboundId: Int? = null,
     val saved: ServerConfig? = null,
+    val themeMode: ThemeMode = ThemeMode.System,
+    val blur: Boolean = true,
+    val animateBg: Boolean = true,
 )
 
 class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     private val store = SecureStore(app)
+    private val prefs = UiPrefs(app)
     private var client: XuiClient? = null
     private var refreshing = false
 
-    private val _state = MutableStateFlow(UiState(saved = store.load()))
+    private val _state = MutableStateFlow(
+        UiState(
+            saved = store.load(),
+            themeMode = runCatching { ThemeMode.valueOf(prefs.theme) }.getOrDefault(ThemeMode.System),
+            blur = prefs.blur,
+            animateBg = prefs.animate,
+        )
+    )
     val state: StateFlow<UiState> = _state.asStateFlow()
 
     init {
@@ -73,7 +87,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     fun logout() {
         store.clear()
         client = null
-        _state.value = UiState()
+        _state.update { UiState(themeMode = it.themeMode, blur = it.blur, animateBg = it.animateBg) }
     }
 
     fun refresh(silent: Boolean = false) {
@@ -97,6 +111,30 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     fun resetClient(ib: Inbound, cl: ClientInfo) =
         action("Трафик сброшен") { it.resetClientTraffic(ib, cl) }
+
+    fun addClient(ib: Inbound, email: String, gb: Double, days: Int) = action("Клиент создан") {
+        val total = (gb * 1024.0 * 1024.0 * 1024.0).toLong()
+        val expiry = if (days > 0) System.currentTimeMillis() + days * 86_400_000L else 0L
+        it.addClient(ib, email, total, expiry)
+    }
+
+    fun deleteClient(ib: Inbound, cl: ClientInfo) =
+        action("Клиент удалён") { it.deleteClient(ib, cl) }
+
+    fun setTheme(m: ThemeMode) {
+        prefs.theme = m.name
+        _state.update { it.copy(themeMode = m) }
+    }
+
+    fun setBlur(v: Boolean) {
+        prefs.blur = v
+        _state.update { it.copy(blur = v) }
+    }
+
+    fun setAnimate(v: Boolean) {
+        prefs.animate = v
+        _state.update { it.copy(animateBg = v) }
+    }
 
     fun restartXray() = action("Xray перезапущен") { it.restartXray() }
 

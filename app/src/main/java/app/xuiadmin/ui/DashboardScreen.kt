@@ -15,6 +15,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ExitToApp
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -37,6 +38,7 @@ fun DashboardScreen(
     onOpen: (Int) -> Unit,
     onToggleInbound: (Inbound, Boolean) -> Unit,
     onRestartXray: () -> Unit,
+    onSettings: () -> Unit,
 ) {
     val bars = WindowInsets.systemBars.asPaddingValues()
     LazyColumn(
@@ -51,10 +53,12 @@ fun DashboardScreen(
                     Text(state.saved?.baseUrl.orEmpty(), color = GlassColors.TextDim, fontSize = 12.sp, maxLines = 1)
                 }
                 if (state.loading) {
-                    CircularProgressIndicator(Modifier.size(22.dp), color = Color.White, strokeWidth = 2.dp)
+                    CircularProgressIndicator(Modifier.size(22.dp), color = GlassColors.Text, strokeWidth = 2.dp)
                     HSpace(12)
                 }
                 GlassIconButton(Icons.Default.Refresh, "Обновить", onRefresh)
+                HSpace(8)
+                GlassIconButton(Icons.Default.Settings, "Настройки", onSettings)
                 HSpace(8)
                 GlassIconButton(Icons.AutoMirrored.Filled.ExitToApp, "Выйти", onLogout)
             }

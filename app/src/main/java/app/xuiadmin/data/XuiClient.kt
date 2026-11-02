@@ -2,6 +2,7 @@ package app.xuiadmin.data
 
 import android.annotation.SuppressLint
 import android.net.Uri
+import android.util.Base64
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
@@ -17,6 +18,7 @@ import org.json.JSONException
 import org.json.JSONObject
 import java.security.SecureRandom
 import java.security.cert.X509Certificate
+import java.util.UUID
 import java.util.concurrent.TimeUnit
 import javax.net.ssl.SSLContext
 import javax.net.ssl.TrustManager
@@ -133,6 +135,65 @@ class XuiClient(private val cfg: ServerConfig) {
 
     suspend fun restartXray() {
         api("POST", "/panel/api/server/restartXrayService")
+    }
+
+    /** Создать клиента. Поля подбираются по протоколу inbound'а. */
+    suspend fun addClient(ib: Inbound, email: String, totalBytes: Long, expiryMs: Long) {
+        val settingsObj = runCatching { JSONObject(JSONObject(ib.raw).optString("settings")) }.getOrDefault(JSONObject())
+        val first = settingsObj.optJSONArray("clients")?.optJSONObject(0)
+        val c = JSONObject()
+        when (ib.protocol) {
+            "vless" -> {
+                c.put("id", UUID.randomUUID().toString())
+                c.put("flow", first?.optString("flow").orEmpty())
+            }
+            "vmess" -> {
+                c.put("id", UUID.randomUUID().toString())
+                c.put("security", "auto")
+            }
+            "trojan" -> c.put("password", randomToken(10))
+            "shadowsocks" -> {
+                val m = settingsObj.optString("method")
+                c.put("method", "")
+                c.put(
+                    "password",
+                    when {
+                        m.contains("2022-blake3-aes-128") -> randomKey(16)
+                        m.startsWith("2022") -> randomKey(32)
+                        else -> randomToken(16)
+                    },
+                )
+            }
+            "hysteria", "hysteria2" -> c.put("auth", randomToken(16))
+            else -> throw XuiException("Протокол ${ib.protocol} пока не поддерживается")
+        }
+        c.put("email", email)
+        c.put("limitIp", 0)
+        c.put("totalGB", totalBytes)
+        c.put("expiryTime", expiryMs)
+        c.put("enable", true)
+        c.put("tgId", "")
+        c.put("subId", randomToken(16))
+        c.put("comment", "")
+        c.put("reset", 0)
+        val settings = JSONObject().put("clients", JSONArray().put(c)).toString()
+        api("POST", "/panel/api/inbounds/addClient", mapOf("id" to ib.id.toString(), "settings" to settings))
+    }
+
+    suspend fun deleteClient(ib: Inbound, client: ClientInfo) {
+        api("POST", "/panel/api/inbounds/${ib.id}/delClient/${Uri.encode(client.key)}")
+    }
+
+    private fun randomToken(n: Int): String {
+        val chars = "abcdefghijklmnopqrstuvwxyz0123456789"
+        val r = SecureRandom()
+        return buildString { repeat(n) { append(chars[r.nextInt(chars.length)]) } }
+    }
+
+    private fun randomKey(bytes: Int): String {
+        val b = ByteArray(bytes)
+        SecureRandom().nextBytes(b)
+        return Base64.encodeToString(b, Base64.NO_WRAP)
     }
 
     // ---------- внутренности ----------
