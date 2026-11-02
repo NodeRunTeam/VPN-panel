@@ -69,6 +69,7 @@ fun LoginScreen(state: UiState, onLogin: (ServerConfig) -> Unit) {
                 text = if (state.loading) "Подключение…" else "Войти",
                 onClick = { onLogin(ServerConfig(url.trim(), user.trim(), pass, trust)) },
                 modifier = Modifier.fillMaxWidth(),
+                solid = true,
                 enabled = !state.loading && url.isNotBlank() && user.isNotBlank() && pass.isNotBlank(),
             )
         }

@@ -94,16 +94,16 @@ class GlassTheme(
 val DarkGlass = GlassTheme(
     dark = true,
     text = Color.White,
-    textDim = Color.White.copy(alpha = 0.66f),
-    fillTop = Color.White.copy(alpha = 0.18f),
-    fillBottom = Color.White.copy(alpha = 0.06f),
-    sheen = Color.White.copy(alpha = 0.14f),
-    edgeA = Color.White.copy(alpha = 0.70f),
-    edgeB = Color.White.copy(alpha = 0.06f),
-    edgeC = Color.White.copy(alpha = 0.30f),
-    track = Color.White.copy(alpha = 0.12f),
+    textDim = Color(0xFF9AA4BC),
+    fillTop = Color(0xFF9DB4FF).copy(alpha = 0.075f),
+    fillBottom = Color(0xFF9DB4FF).copy(alpha = 0.030f),
+    sheen = Color.White.copy(alpha = 0.035f),
+    edgeA = Color.White.copy(alpha = 0.20f),
+    edgeB = Color.White.copy(alpha = 0.05f),
+    edgeC = Color.White.copy(alpha = 0.10f),
+    track = Color.White.copy(alpha = 0.09f),
     offDot = Color.White.copy(alpha = 0.30f),
-    dialogBg = Color(0xF01B2342),
+    dialogBg = Color(0xF00B1020),
 )
 
 val LightGlass = GlassTheme(
@@ -151,6 +151,24 @@ val LocalBackdrop = staticCompositionLocalOf<Backdrop?> { null }
 
 /** Рисует весь фон (градиент, световые пятна и чёткие «шары»). Координаты — в системе всего экрана. */
 fun DrawScope.drawBackdrop(dark: Boolean, v: Float, w: Float, h: Float) {
+    if (dark) {
+        drawRect(
+            Brush.verticalGradient(
+                listOf(Color(0xFF04060E), Color(0xFF060A16), Color(0xFF04060C)),
+                startY = 0f,
+                endY = h,
+            ),
+            size = Size(w, h),
+        )
+        // синее свечение из правого верхнего угла
+        blob(Color(0xFF1D4ED8), Offset(w * (1.05f - 0.10f * v), h * (-0.02f + 0.03f * v)), w * 1.0f, 0.60f)
+        // тёплый акцент справа по центру
+        blob(Color(0xFFEA580C), Offset(w * (1.08f - 0.08f * v), h * (0.46f + 0.05f * v)), w * 0.75f, 0.45f)
+        // еле заметные холодные пятна слева
+        blob(Color(0xFF1E3A8A), Offset(w * (-0.05f + 0.10f * v), h * 0.12f), w * 0.65f, 0.22f)
+        blob(Color(0xFF312E81), Offset(w * 0.30f, h * (0.95f - 0.05f * v)), w * 0.70f, 0.18f)
+        return
+    }
     val bg = if (dark) {
         listOf(Color(0xFF0A0F24), Color(0xFF111A3A), Color(0xFF0B1226))
     } else {
@@ -291,12 +309,12 @@ fun GlassSurface(
 @Composable
 fun GlassCard(
     modifier: Modifier = Modifier,
-    corner: Dp = 28.dp,
+    corner: Dp = 22.dp,
     onClick: (() -> Unit)? = null,
     content: @Composable ColumnScope.() -> Unit,
 ) {
     GlassSurface(modifier = modifier, shape = RoundedCornerShape(corner), onClick = onClick) {
-        Column(Modifier.fillMaxWidth().padding(18.dp), content = content)
+        Column(Modifier.fillMaxWidth().padding(16.dp), content = content)
     }
 }
 
@@ -308,15 +326,23 @@ fun GlassButton(
     tint: Color = GlassColors.Blue,
     enabled: Boolean = true,
     small: Boolean = false,
+    solid: Boolean = false,
 ) {
     val shape = RoundedCornerShape(50)
     val t = LocalGlass.current
+    val filled = solid || !t.dark
+    val bg = if (filled) {
+        Brush.verticalGradient(listOf(tint.copy(alpha = 0.95f), tint.copy(alpha = 0.60f)))
+    } else {
+        Brush.verticalGradient(listOf(tint.copy(alpha = 0.30f), tint.copy(alpha = 0.14f)))
+    }
+    val edge = if (filled) edgeBrush(t) else Brush.linearGradient(listOf(tint.copy(alpha = 0.65f), tint.copy(alpha = 0.15f)))
     Box(
         modifier
             .alpha(if (enabled) 1f else 0.5f)
             .clip(shape)
-            .background(Brush.verticalGradient(listOf(tint.copy(alpha = 0.95f), tint.copy(alpha = 0.60f))))
-            .border(1.dp, edgeBrush(t), shape)
+            .background(bg)
+            .border(1.dp, edge, shape)
             .clickable(enabled = enabled, onClick = onClick)
             .padding(horizontal = if (small) 14.dp else 22.dp, vertical = if (small) 9.dp else 14.dp),
         contentAlignment = Alignment.Center,

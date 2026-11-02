@@ -38,6 +38,7 @@ data class UiState(
     val themeMode: ThemeMode = ThemeMode.System,
     val blur: Boolean = true,
     val animateBg: Boolean = true,
+    val cpuHistory: List<Float> = emptyList(),
 )
 
 class AppViewModel(app: Application) : AndroidViewModel(app) {
@@ -74,6 +75,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                     it.copy(
                         loading = false, screen = Screen.Dashboard, saved = cfg,
                         status = d.status, inbounds = d.inbounds, onlines = d.onlines,
+                        cpuHistory = listOfNotNull(d.status?.cpu?.toFloat()),
                     )
                 }
             } catch (e: CancellationException) {
@@ -148,6 +150,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 it.copy(
                     loading = false, error = null,
                     status = d.status ?: it.status, inbounds = d.inbounds, onlines = d.onlines,
+                    cpuHistory = (it.cpuHistory + listOfNotNull(d.status?.cpu?.toFloat())).takeLast(30),
                 )
             }
         } catch (e: CancellationException) {
