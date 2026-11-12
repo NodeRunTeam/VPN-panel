@@ -34,6 +34,7 @@ class XuiException(message: String) : Exception(message)
 class XuiClient(private val cfg: ServerConfig) {
 
     private val cookies = MemoryCookieJar()
+    @Volatile private var csrf: String? = null
     private val http: OkHttpClient = buildHttp()
     private val base: String = cfg.baseUrl.trim()
         .let { if (it.startsWith("http://") || it.startsWith("https://")) it else "https://$it" }
@@ -42,18 +43,39 @@ class XuiClient(private val cfg: ServerConfig) {
     // ---------- публичные методы ----------
 
     suspend fun login() = withContext(Dispatchers.IO) {
+        // 3x-ui v3+: перед входом нужен CSRF-токен (GET /csrf-token). На старых панелях эндпоинта нет — пропускаем.
+        fetchCsrf()
         val body = FormBody.Builder()
             .add("username", cfg.username)
             .add("password", cfg.password)
+            .add("twoFactorCode", "")
             .build()
-        val req = Request.Builder().url("$base/login").post(body).build()
-        http.newCall(req).execute().use { resp ->
+        val rb = Request.Builder().url("$base/login").post(body)
+        csrf?.let { rb.header("X-CSRF-Token", it) }
+        http.newCall(rb.build()).execute().use { resp ->
             val text = resp.body?.string().orEmpty()
             val json = parseJson(text)
-                ?: throw XuiException("HTTP ${resp.code}: панель вернула не JSON. Проверьте адрес и путь панели (webBasePath)")
+                ?: throw XuiException(
+                    if (resp.code == 403) "HTTP 403: панель отклонила вход (CSRF/доступ). Проверьте адрес и путь панели (webBasePath)"
+                    else "HTTP ${resp.code}: панель вернула не JSON. Проверьте адрес и путь панели (webBasePath)"
+                )
             if (!json.optBoolean("success", false)) {
                 throw XuiException(json.optString("msg").ifBlank { "Неверный логин или пароль" })
             }
+        }
+        // после входа сессия обновилась — берём свежий токен для POST-запросов
+        fetchCsrf()
+    }
+
+    /** Получает CSRF-токен текущей сессии. Ошибки игнорируются (старые панели без CSRF). */
+    private fun fetchCsrf() {
+        csrf = try {
+            http.newCall(Request.Builder().url("$base/csrf-token").get().build()).execute().use { r ->
+                val j = parseJson(r.body?.string().orEmpty())
+                if (j != null && j.optBoolean("success", false)) j.optString("obj").ifBlank { null } else null
+            }
+        } catch (e: Exception) {
+            null
         }
     }
 
@@ -97,11 +119,14 @@ class XuiClient(private val cfg: ServerConfig) {
         return (0 until arr.length()).map { parseInbound(arr.getJSONObject(it)) }
     }
 
-    suspend fun onlines(): Set<String> = try {
-        val arr = api("POST", "/panel/api/inbounds/onlines").optJSONArray("obj")
-        if (arr == null) emptySet() else (0 until arr.length()).map { arr.optString(it) }.toSet()
-    } catch (e: XuiException) {
-        emptySet()
+    suspend fun onlines(): Set<String> {
+        for (path in listOf("/panel/api/inbounds/onlines", "/panel/api/clients/onlines")) {
+            try {
+                val arr = api("POST", path).optJSONArray("obj")
+                return if (arr == null) emptySet() else (0 until arr.length()).map { arr.optString(it) }.toSet()
+            } catch (e: XuiException) { /* пробуем следующий маршрут */ }
+        }
+        return emptySet()
     }
 
     /** Включить / выключить inbound. Шлём исходный объект целиком, меняя только enable. */
@@ -130,7 +155,11 @@ class XuiClient(private val cfg: ServerConfig) {
     }
 
     suspend fun resetClientTraffic(ib: Inbound, client: ClientInfo) {
-        api("POST", "/panel/api/inbounds/${ib.id}/resetClientTraffic/${Uri.encode(client.email)}")
+        try {
+            api("POST", "/panel/api/inbounds/${ib.id}/resetClientTraffic/${Uri.encode(client.email)}")
+        } catch (e: XuiException) {
+            api("POST", "/panel/api/clients/resetTraffic/${Uri.encode(client.email)}")
+        }
     }
 
     suspend fun restartXray() {
@@ -196,7 +225,11 @@ class XuiClient(private val cfg: ServerConfig) {
     }
 
     suspend fun deleteClient(ib: Inbound, client: ClientInfo) {
-        api("POST", "/panel/api/inbounds/${ib.id}/delClient/${Uri.encode(client.key)}")
+        try {
+            api("POST", "/panel/api/inbounds/${ib.id}/delClient/${Uri.encode(client.key)}")
+        } catch (e: XuiException) {
+            api("POST", "/panel/api/clients/del/${Uri.encode(client.email)}")
+        }
     }
 
     private fun randomToken(n: Int): String {
@@ -267,7 +300,12 @@ class XuiClient(private val cfg: ServerConfig) {
     ): JSONObject = withContext(Dispatchers.IO) {
         var (code, text) = raw(method, path, form)
         var json = parseJson(text)
-        if (json == null) {            // сессия, скорее всего, истекла
+        if (code == 403) {              // CSRF-токен устарел — обновляем и повторяем
+            fetchCsrf()
+            val r = raw(method, path, form)
+            code = r.first; text = r.second; json = parseJson(text)
+        }
+        if (json == null) {             // сессия, скорее всего, истекла
             login()
             val r = raw(method, path, form)
             code = r.first
@@ -289,6 +327,7 @@ class XuiClient(private val cfg: ServerConfig) {
             val fb = FormBody.Builder()
             form?.forEach { (k, v) -> fb.add(k, v) }
             rb.post(fb.build())
+            csrf?.let { rb.header("X-CSRF-Token", it) }
         }
         http.newCall(rb.build()).execute().use { r ->
             return r.code to r.body?.string().orEmpty()
